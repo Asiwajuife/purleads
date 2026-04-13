@@ -1,0 +1,24 @@
+{
+  "name": "@purleads/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/worker.js",
+    "dev": "ts-node --transpile-only src/worker.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.4.1",
+    "nodemailer": "^6.9.16",
+    "openai": "^4.73.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
+  }
+}
