@@ -45,6 +45,9 @@ model Workspace {
   emailLogs EmailLog[]
   replies   Reply[]
   webhooks  Webhook[]
+  companies            Company[]
+  contacts             Contact[]
+  enrichmentProviders  EnrichmentProvider[]
 
   @@map("workspaces")
 }
@@ -126,25 +129,29 @@ model Inbox {
 model Lead {
   id          String     @id @default(uuid())
   workspaceId String
-  email       String
+  companyUrl  String?
+  email       String?
   firstName   String?
   lastName    String?
   company     String?
   title       String?
   website     String?
   phone       String?
-  status           LeadStatus @default(ACTIVE)
-  unsubscribeToken String?    @unique @default(uuid())
+  status           LeadStatus       @default(ACTIVE)
+  enrichmentStatus EnrichmentStatus @default(NONE)
+  companyId        String?
+  unsubscribeToken String?          @unique @default(uuid())
   customData       Json?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  emailLogs   EmailLog[]
-  replies     Reply[]
-  campaignLeads CampaignLead[]
+  workspace       Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enrichedCompany Company?     @relation(fields: [companyId], references: [id])
+  emailLogs       EmailLog[]
+  replies         Reply[]
+  campaignLeads   CampaignLead[]
 
-  @@unique([workspaceId, email])
+  @@unique([workspaceId, companyUrl])
   @@map("leads")
 }
 
@@ -153,6 +160,13 @@ enum LeadStatus {
   UNSUBSCRIBED
   BOUNCED
   REPLIED
+}
+
+enum EnrichmentStatus {
+  NONE
+  PENDING
+  ENRICHED
+  FAILED
 }
 
 // ─── Campaign ──────────────────────────────────────────────────────────────────
@@ -228,6 +242,7 @@ model EmailLog {
   sequenceId  String?
   inboxId     String
   to          String
+  cc          String?
   subject     String
   body        String        @db.Text
   status      EmailStatus   @default(PENDING)
@@ -267,6 +282,70 @@ model Webhook {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("webhooks")
+}
+
+// ─── Company ───────────────────────────────────────────────────────────────────
+model Company {
+  id          String    @id @default(uuid())
+  workspaceId String
+  domain      String
+  name        String?
+  industry    String?
+  size        String?
+  location    String?
+  description String?   @db.Text
+  enrichedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts    Contact[]
+  leads       Lead[]
+
+  @@unique([workspaceId, domain])
+  @@map("companies")
+}
+
+// ─── Contact ───────────────────────────────────────────────────────────────────
+model Contact {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  companyId       String
+
+  firstName       String?
+  lastName        String?
+  email           String
+  jobTitle        String?
+  linkedinUrl     String?
+
+  source          String   @default("enrichment")
+  confidenceScore Float?
+  score           Int      @default(0)
+  status          String   @default("ACTIVE")
+
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@map("contacts")
+}
+
+// ─── Enrichment Providers ──────────────────────────────────────────────────────
+model EnrichmentProvider {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String    // slug: "apollo", "snov", "hunter", "custom_xyz"
+  displayName String
+  credentials Json      // { apiKey?, clientId?, clientSecret?, ... }
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@map("enrichment_providers")
 }
 
 // ─── Reply ─────────────────────────────────────────────────────────────────────

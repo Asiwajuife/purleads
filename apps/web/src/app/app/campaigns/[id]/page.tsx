@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, Trash2, ArrowLeft, Play, Pause, Eye, X, Copy, Clock } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Play, Pause, Eye, X, Copy, Clock, Upload, UserPlus, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { getWorkspaceId } from "@/lib/auth";
+import RichField from "@/components/RichField";
 
 function PreviewModal({ seq, onClose }: { seq: any; onClose: () => void }) {
   const sampleLead = { name: "John Smith", firstName: "John", company: "Acme Corp", title: "CEO" };
@@ -16,34 +17,213 @@ function PreviewModal({ seq, onClose }: { seq: any; onClose: () => void }) {
       .replace(/\{\{icebreaker\}\}/gi, "I noticed Acme Corp recently expanded into new markets — impressive growth.");
   }
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">Email Preview <span className="text-xs text-gray-400 font-normal ml-2">(sample lead: John Smith, Acme Corp)</span></h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08]">
+          <h3 className="font-semibold text-white">
+            Email Preview{" "}
+            <span className="text-xs text-white/30 font-normal ml-1">(sample: John Smith, Acme Corp)</span>
+          </h3>
+          <button onClick={onClose} className="text-white/30 hover:text-white transition-colors"><X size={18} /></button>
         </div>
         <div className="p-6 space-y-4">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Subject</p>
-            <p className="text-gray-900 font-medium">{applyVars(seq.subject)}</p>
+          <div className="bg-white/[0.05] rounded-xl p-4 border border-white/[0.08]">
+            <p className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-1.5">Subject</p>
+            <p className="text-white/80 font-medium">{applyVars(seq.subject)}</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Body</p>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{applyVars(seq.body)}</p>
+          <div className="bg-white/[0.05] rounded-xl p-4 border border-white/[0.08]">
+            <p className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-2">Body</p>
+            <p className="text-sm text-white/60 whitespace-pre-wrap leading-relaxed">{applyVars(seq.body)}</p>
           </div>
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-100 text-xs text-blue-700">
-            <p className="font-medium mb-1">What AI will add per lead:</p>
-            <p>A personalized icebreaker sentence will be generated based on each lead&apos;s company, title, and website — replacing the <code className="bg-blue-100 px-1 rounded">&#123;&#123;icebreaker&#125;&#125;</code> placeholder or prepended to the body.</p>
+          <div className="rounded-xl bg-blue-500/[0.1] border border-blue-400/20 p-4 text-xs text-blue-300">
+            <p className="font-semibold mb-1">What AI will add per lead:</p>
+            <p>A personalized icebreaker sentence will be generated based on each lead's company, title, and website — replacing the <code className="bg-blue-400/20 px-1 rounded">&#123;&#123;icebreaker&#125;&#125;</code> placeholder.</p>
           </div>
-          <div className="text-xs text-gray-400 border-t pt-3">
-            <p className="font-medium mb-1 text-gray-500">Footer added automatically:</p>
-            <p>If you&apos;d prefer not to receive emails like this, you can <span className="underline">unsubscribe here</span>.</p>
+          <div className="text-xs text-white/25 border-t border-white/[0.07] pt-3">
+            <p className="font-semibold mb-1 text-white/35">Footer added automatically:</p>
+            <p>If you'd prefer not to receive emails like this, you can <span className="underline">unsubscribe here</span>.</p>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// ─── Add Leads Panel ──────────────────────────────────────────────────────────
+
+const EMPTY_MANUAL = { company: "", firstName: "", lastName: "", email: "", cc: "" };
+
+function AddLeadsPanel({ campaignId, wid, onAdded }: { campaignId: string; wid: string; onAdded: () => void }) {
+  const [mode, setMode] = useState<"csv" | "manual">("csv");
+
+  // CSV state
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<string | null>(null);
+
+  // Manual state
+  const [form, setForm] = useState(EMPTY_MANUAL);
+  const [submitting, setSubmitting] = useState(false);
+  const [manualResult, setManualResult] = useState<string | null>(null);
+
+  async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setCsvResult(null);
+    try {
+      const res = await api.leads.uploadCsv(wid, file) as any;
+      if (res.leadIds?.length) {
+        await api.campaigns.addLeads(wid, campaignId, res.leadIds);
+      }
+      const enrichMsg = res.domainsQueued > 0
+        ? ` · ${res.domainsQueued} domain${res.domainsQueued !== 1 ? "s" : ""} queued for enrichment`
+        : "";
+      setCsvResult(`✅ Imported ${res.imported} leads and added to campaign${enrichMsg}`);
+      onAdded();
+    } catch (err: any) {
+      setCsvResult(`❌ ${err.message}`);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleManualSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.email.trim()) {
+      setManualResult("❌ Contact email is required");
+      return;
+    }
+    setSubmitting(true);
+    setManualResult(null);
+    try {
+      const lead = await api.leads.create(wid, {
+        company: form.company.trim() || undefined,
+        firstName: form.firstName.trim() || undefined,
+        lastName: form.lastName.trim() || undefined,
+        email: form.email.trim(),
+        customData: form.cc.trim() ? { cc: form.cc.trim() } : undefined,
+      }) as any;
+      await api.campaigns.addLeads(wid, campaignId, [lead.id]);
+      setManualResult(`✅ Lead added to campaign`);
+      setForm(EMPTY_MANUAL);
+      onAdded();
+    } catch (err: any) {
+      setManualResult(`❌ ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const tabBase = "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-all";
+  const tabActive = "bg-brand-600/30 text-white border border-brand-400/30";
+  const tabInactive = "text-white/40 hover:text-white/70 hover:bg-white/[0.05]";
+
+  return (
+    <div className="card p-5 mb-8">
+      <div className="absolute top-0 left-0 right-0 h-px rounded-t-2xl" style={{ background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.4), transparent)" }} />
+
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-base font-semibold text-white">Add Leads</h2>
+        <div className="flex gap-1 p-1 bg-white/[0.04] rounded-xl border border-white/[0.08]">
+          <button className={`${tabBase} ${mode === "csv" ? tabActive : tabInactive}`} onClick={() => setMode("csv")}>
+            <Upload size={14} /> Upload CSV
+          </button>
+          <button className={`${tabBase} ${mode === "manual" ? tabActive : tabInactive}`} onClick={() => setMode("manual")}>
+            <UserPlus size={14} /> Enter Manually
+          </button>
+        </div>
+      </div>
+
+      {mode === "csv" && (
+        <div>
+          <p className="text-xs text-blue-300 bg-blue-500/[0.1] border border-blue-400/20 rounded-xl px-4 py-3 mb-4">
+            <strong>Required CSV column:</strong> <code className="font-mono bg-blue-400/20 px-1.5 py-0.5 rounded">company_url</code>
+            &nbsp;·&nbsp;Decision makers are auto-discovered and enriched. Emails go to DM1, CC to DM2.
+          </p>
+          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            {uploading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+            {uploading ? "Uploading…" : "Choose CSV File"}
+          </button>
+          {csvResult && (
+            <p className={`mt-3 text-sm font-medium ${csvResult.startsWith("❌") ? "text-red-400" : "text-emerald-400"}`}>
+              {csvResult}
+            </p>
+          )}
+        </div>
+      )}
+
+      {mode === "manual" && (
+        <form onSubmit={handleManualSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Company Name</label>
+              <RichField
+                value={form.company}
+                onChange={(v) => setForm((f) => ({ ...f, company: v }))}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">First Name</label>
+              <RichField
+                value={form.firstName}
+                onChange={(v) => setForm((f) => ({ ...f, firstName: v }))}
+                placeholder="Jane"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Surname</label>
+              <RichField
+                value={form.lastName}
+                onChange={(v) => setForm((f) => ({ ...f, lastName: v }))}
+                placeholder="Smith"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Contact Email *</label>
+              <RichField
+                value={form.email}
+                onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+                placeholder="jane@acme.com"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">
+              CC Emails <span className="normal-case font-normal text-white/25">(comma-separated)</span>
+            </label>
+            <RichField
+              value={form.cc}
+              onChange={(v) => setForm((f) => ({ ...f, cc: v }))}
+              placeholder="cto@acme.com, cfo@acme.com"
+            />
+            <p className="text-xs text-white/25 mt-1">Multiple addresses separated by commas</p>
+          </div>
+          {manualResult && (
+            <p className={`text-sm font-medium ${manualResult.startsWith("❌") ? "text-red-400" : "text-emerald-400"}`}>
+              {manualResult}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-2">
+              {submitting ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
+              {submitting ? "Adding…" : "Add Lead to Campaign"}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -69,10 +249,7 @@ export default function CampaignDetailPage() {
       api.sequences.list(wid, id),
       api.campaigns.stats(wid, id),
     ]) as any[];
-    setCampaign(c);
-    setSequences(seqs);
-    setStats(s);
-    setLoading(false);
+    setCampaign(c); setSequences(seqs); setStats(s); setLoading(false);
   }
 
   useEffect(() => { if (wid && id) load(); }, [wid, id]);
@@ -82,18 +259,14 @@ export default function CampaignDetailPage() {
     setSaving(true);
     try {
       await api.sequences.create(wid, id, {
-        subject: newStep.subject,
-        body: newStep.body,
-        step: sequences.length + 1,
-        delayDays: Number(newStep.delayDays),
+        subject: newStep.subject, body: newStep.body,
+        step: sequences.length + 1, delayDays: Number(newStep.delayDays),
         ...(newStep.abTest && newStep.subjectB ? { subjectB: newStep.subjectB, bodyB: newStep.bodyB } : {}),
       });
       setNewStep({ subject: "", body: "", delayDays: 0, subjectB: "", bodyB: "", abTest: false });
       setAddingStep(false);
       load();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function deleteStep(seqId: string) {
@@ -102,100 +275,80 @@ export default function CampaignDetailPage() {
   }
 
   async function launch() {
-    try {
-      const res = await api.campaigns.launch(wid, id) as any;
-      alert(`Campaign launched! ${res.queued} emails queued.`);
-      load();
-    } catch (err: any) {
-      alert(err.message);
-    }
+    try { const res = await api.campaigns.launch(wid, id) as any; alert(`Campaign launched! ${res.queued} emails queued.`); load(); }
+    catch (err: any) { alert(err.message); }
   }
 
-  async function pause() {
-    await api.campaigns.pause(wid, id);
-    load();
-  }
+  async function pause() { await api.campaigns.pause(wid, id); load(); }
 
   async function scheduleCampaign() {
     if (!scheduleAt) return;
     setScheduling(true);
     try {
       await api.campaigns.schedule(wid, id, new Date(scheduleAt).toISOString());
-      setShowSchedule(false);
-      alert(`Campaign scheduled for ${new Date(scheduleAt).toLocaleString()}`);
-      load();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setScheduling(false);
-    }
+      setShowSchedule(false); alert(`Campaign scheduled for ${new Date(scheduleAt).toLocaleString()}`); load();
+    } catch (err: any) { alert(err.message); }
+    finally { setScheduling(false); }
   }
 
   async function cloneCampaign() {
     setCloning(true);
     try {
-      const newCampaign = await api.campaigns.create(wid, {
-        name: `${campaign.name} (copy)`,
-        fromName: campaign.fromName,
-        replyTo: campaign.replyTo,
-      }) as any;
+      const newCampaign = await api.campaigns.create(wid, { name: `${campaign.name} (copy)`, fromName: campaign.fromName, replyTo: campaign.replyTo }) as any;
       for (const seq of sequences) {
-        await api.sequences.create(wid, newCampaign.id, {
-          subject: seq.subject,
-          body: seq.body,
-          step: seq.step,
-          delayDays: seq.delayDays,
-          ...(seq.subjectB ? { subjectB: seq.subjectB, bodyB: seq.bodyB } : {}),
-        });
+        await api.sequences.create(wid, newCampaign.id, { subject: seq.subject, body: seq.body, step: seq.step, delayDays: seq.delayDays, ...(seq.subjectB ? { subjectB: seq.subjectB, bodyB: seq.bodyB } : {}) });
       }
       router.push(`/app/campaigns/${newCampaign.id}`);
-    } finally {
-      setCloning(false);
-    }
+    } finally { setCloning(false); }
   }
 
   if (loading) {
-    return <div className="p-8 text-gray-400 text-sm">Loading...</div>;
+    return (
+      <div className="p-8 flex items-center justify-center h-64">
+        <div className="flex items-center gap-3 text-white/30 text-sm">
+          <div className="w-4 h-4 rounded-full border-2 border-white/20 border-t-brand-400 animate-spin" />
+          Loading campaign…
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
       {previewSeq && <PreviewModal seq={previewSeq} onClose={() => setPreviewSeq(null)} />}
 
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 mb-6">
-        <ArrowLeft size={16} />
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-1.5 text-sm text-white/35 hover:text-white/70 mb-6 transition-colors"
+      >
+        <ArrowLeft size={15} />
         Back to Campaigns
       </button>
 
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{campaign?.name}</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">{campaign?.name}</h1>
           <div className="flex items-center gap-3 mt-2">
             <span className={`badge-${campaign?.status?.toLowerCase()}`}>{campaign?.status}</span>
-            <span className="text-sm text-gray-500">
-              {campaign?.fromName && `From: ${campaign.fromName}`}
-            </span>
+            {campaign?.fromName && (
+              <span className="text-sm text-white/35">From: {campaign.fromName}</span>
+            )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={cloneCampaign}
-            disabled={cloning}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={cloneCampaign} disabled={cloning} className="btn-secondary flex items-center gap-2 text-sm">
             <Copy size={14} />
-            {cloning ? "Cloning..." : "Clone"}
+            {cloning ? "Cloning…" : "Clone"}
           </button>
           {(campaign?.status === "DRAFT" || campaign?.status === "PAUSED") && (
             <>
               <div className="relative">
                 <button onClick={() => setShowSchedule(!showSchedule)} className="btn-secondary flex items-center gap-2 text-sm">
-                  <Clock size={14} />
-                  Schedule
+                  <Clock size={14} /> Schedule
                 </button>
                 {showSchedule && (
-                  <div className="absolute right-0 top-10 z-20 bg-white rounded-xl shadow-xl border border-gray-100 p-4 w-72">
-                    <p className="text-sm font-medium text-gray-900 mb-3">Schedule launch</p>
+                  <div className="absolute right-0 top-11 z-20 card p-4 w-72 shadow-2xl">
+                    <p className="text-sm font-semibold text-white mb-3">Schedule launch</p>
                     <input
                       type="datetime-local"
                       className="input mb-3 text-sm"
@@ -206,22 +359,23 @@ export default function CampaignDetailPage() {
                     <div className="flex gap-2">
                       <button onClick={() => setShowSchedule(false)} className="btn-secondary flex-1 text-sm">Cancel</button>
                       <button onClick={scheduleCampaign} disabled={scheduling || !scheduleAt} className="btn-primary flex-1 text-sm">
-                        {scheduling ? "Scheduling..." : "Confirm"}
+                        {scheduling ? "Scheduling…" : "Confirm"}
                       </button>
                     </div>
                   </div>
                 )}
               </div>
               <button onClick={launch} className="btn-primary flex items-center gap-2">
-                <Play size={15} />
-                Launch Now
+                <Play size={15} /> Launch Now
               </button>
             </>
           )}
           {campaign?.status === "RUNNING" && (
-            <button onClick={pause} className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-medium text-sm">
-              <Pause size={15} />
-              Pause
+            <button
+              onClick={pause}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-400/25 rounded-xl hover:bg-amber-500/30 font-semibold text-sm transition-all"
+            >
+              <Pause size={15} /> Pause
             </button>
           )}
         </div>
@@ -232,50 +386,56 @@ export default function CampaignDetailPage() {
         <>
           <div className="grid grid-cols-4 gap-3 mb-4">
             {[
-              { label: "Leads", value: stats.totalLeads },
-              { label: "Sent", value: stats.sent },
-              { label: "Failed", value: stats.failed },
-              { label: "Replies", value: stats.replies },
-            ].map(({ label, value }) => (
-              <div key={label} className="card p-4 text-center">
-                <p className="text-2xl font-bold text-gray-900">{value}</p>
-                <p className="text-xs text-gray-500 mt-1">{label}</p>
+              { label: "Leads", value: stats.totalLeads, glow: "#8b5cf6" },
+              { label: "Sent", value: stats.sent, glow: "#3b82f6" },
+              { label: "Failed", value: stats.failed, glow: "#ef4444" },
+              { label: "Replies", value: stats.replies, glow: "#10b981" },
+            ].map(({ label, value, glow }) => (
+              <div key={label} className="card p-4 text-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-px rounded-t-2xl" style={{ background: `linear-gradient(90deg, transparent, ${glow}50, transparent)` }} />
+                <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
+                <p className="text-xs text-white/35 mt-1 uppercase tracking-wider">{label}</p>
               </div>
             ))}
           </div>
           {stats.ab?.length > 0 && (
-            <div className="card p-4 mb-8">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">A/B Test Results</p>
+            <div className="card p-5 mb-8">
+              <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">A/B Test Results</p>
               <div className="grid grid-cols-2 gap-4">
                 {stats.ab.map((v: any) => (
-                  <div key={v.variant} className={`rounded-lg px-4 py-3 border ${v.variant === "A" ? "bg-blue-50 border-blue-100" : "bg-purple-50 border-purple-100"}`}>
-                    <p className={`text-xs font-bold mb-1 ${v.variant === "A" ? "text-blue-700" : "text-purple-700"}`}>Variant {v.variant}</p>
-                    <p className="text-sm text-gray-700">{v.sent} sent · {v.opens} opens</p>
-                    <p className="text-xs text-gray-500">{v.sent > 0 ? Math.round((v.opens / v.sent) * 100) : 0}% open rate</p>
+                  <div
+                    key={v.variant}
+                    className="rounded-xl px-4 py-3 border"
+                    style={v.variant === "A"
+                      ? { background: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.2)" }
+                      : { background: "rgba(139,92,246,0.08)", borderColor: "rgba(139,92,246,0.2)" }}
+                  >
+                    <p className={`text-xs font-bold mb-1 ${v.variant === "A" ? "text-blue-400" : "text-purple-400"}`}>Variant {v.variant}</p>
+                    <p className="text-sm text-white/70">{v.sent} sent · {v.opens} opens</p>
+                    <p className="text-xs text-white/35">{v.sent > 0 ? Math.round((v.opens / v.sent) * 100) : 0}% open rate</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {(!stats.ab || stats.ab.length === 0) && <div className="mb-8" />}
+          {(!stats.ab || stats.ab.length === 0) && <div className="mb-6" />}
         </>
       )}
+
+      {/* Add Leads */}
+      <AddLeadsPanel campaignId={id} wid={wid} onAdded={load} />
 
       {/* Sequence Builder */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Email Sequence</h2>
-          <button
-            onClick={() => setAddingStep(!addingStep)}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
-            <Plus size={15} />
-            Add Step
+          <h2 className="text-lg font-semibold text-white">Email Sequence</h2>
+          <button onClick={() => setAddingStep(!addingStep)} className="btn-secondary flex items-center gap-2 text-sm">
+            <Plus size={15} /> Add Step
           </button>
         </div>
 
         {sequences.length === 0 && !addingStep && (
-          <div className="card p-8 text-center text-gray-400">
+          <div className="card p-10 text-center text-white/25">
             <p className="font-medium">No steps yet</p>
             <p className="text-sm mt-1">Add email steps to build your sequence</p>
           </div>
@@ -286,37 +446,34 @@ export default function CampaignDetailPage() {
             <div key={seq.id} className="card p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-bold">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-600/50 to-brand-800/30 border border-brand-400/20 flex items-center justify-center text-sm font-bold text-brand-300">
                     {i + 1}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-semibold text-gray-900 text-sm">{seq.subject}</p>
+                      <p className="font-semibold text-white/80 text-sm">{seq.subject}</p>
                       {seq.subjectB && (
-                        <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">A/B</span>
+                        <span className="text-xs bg-purple-400/15 text-purple-300 ring-1 ring-purple-400/25 px-2 py-0.5 rounded-full font-semibold">A/B</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500">
-                      {seq.delayDays === 0
-                        ? "Send immediately"
-                        : `Wait ${seq.delayDays} day${seq.delayDays !== 1 ? "s" : ""} after previous`}
+                    <p className="text-xs text-white/35 mt-0.5">
+                      {seq.delayDays === 0 ? "Send immediately" : `Wait ${seq.delayDays} day${seq.delayDays !== 1 ? "s" : ""} after previous`}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => setPreviewSeq(seq)}
-                    className="text-gray-400 hover:text-brand-600 flex items-center gap-1 text-xs"
+                    className="flex items-center gap-1 text-xs text-white/30 hover:text-brand-400 transition-colors font-medium"
                   >
-                    <Eye size={14} />
-                    Preview
+                    <Eye size={13} /> Preview
                   </button>
-                  <button onClick={() => deleteStep(seq.id)} className="text-gray-400 hover:text-red-600">
-                    <Trash2 size={14} />
+                  <button onClick={() => deleteStep(seq.id)} className="text-white/20 hover:text-red-400 transition-colors">
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg px-4 py-3 border border-gray-100">
+              <p className="text-sm text-white/45 whitespace-pre-wrap bg-white/[0.04] rounded-xl px-4 py-3 border border-white/[0.07] leading-relaxed">
                 {seq.body}
               </p>
             </div>
@@ -325,9 +482,9 @@ export default function CampaignDetailPage() {
 
         {addingStep && (
           <form onSubmit={addStep} className="card p-5 mt-4 space-y-4">
-            <h3 className="font-semibold text-gray-900 text-sm">New Step (Step {sequences.length + 1})</h3>
+            <h3 className="font-semibold text-white text-sm">New Step (Step {sequences.length + 1})</h3>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Subject *</label>
               <input
                 className="input"
                 value={newStep.subject}
@@ -337,71 +494,51 @@ export default function CampaignDetailPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Email Body * (use &#123;&#123;name&#125;&#125;, &#123;&#123;company&#125;&#125;, &#123;&#123;icebreaker&#125;&#125;)
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">
+                Email Body * — use &#123;&#123;name&#125;&#125;, &#123;&#123;company&#125;&#125;, &#123;&#123;icebreaker&#125;&#125;
               </label>
               <textarea
-                className="input min-h-[140px] resize-none"
+                className="input min-h-[140px] resize-y"
                 value={newStep.body}
                 onChange={(e) => setNewStep({ ...newStep, body: e.target.value })}
-                placeholder="Hi {{name}},&#10;&#10;{{icebreaker}}&#10;&#10;I noticed {{company}} is doing great work in...&#10;&#10;Best,&#10;[Your name]"
+                placeholder={"Hi {{name}},\n\n{{icebreaker}}\n\nI noticed {{company}} is doing great work in...\n\nBest,\n[Your name]"}
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Delay (days after previous step)
-              </label>
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Delay (days after previous step)</label>
               <input
-                type="number"
-                min={0}
-                max={30}
-                className="input w-32"
+                type="number" min={0} max={30} className="input w-32"
                 value={newStep.delayDays}
                 onChange={(e) => setNewStep({ ...newStep, delayDays: parseInt(e.target.value) || 0 })}
               />
             </div>
-            {/* A/B Test toggle */}
-            <div className="border-t border-gray-100 pt-3">
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 font-medium">
+            <div className="border-t border-white/[0.07] pt-3">
+              <label className="flex items-center gap-2.5 cursor-pointer text-sm text-white/60 font-medium">
                 <input
                   type="checkbox"
                   checked={newStep.abTest}
                   onChange={(e) => setNewStep({ ...newStep, abTest: e.target.checked })}
+                  className="rounded border-white/20"
                 />
-                A/B test this step <span className="text-xs font-normal text-gray-500">(split leads 50/50 between two variants)</span>
+                A/B test this step <span className="text-xs font-normal text-white/30">(split leads 50/50 between two variants)</span>
               </label>
             </div>
             {newStep.abTest && (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Subject — Variant B</label>
-                  <input
-                    className="input"
-                    value={newStep.subjectB}
-                    onChange={(e) => setNewStep({ ...newStep, subjectB: e.target.value })}
-                    placeholder="Different subject line for B group"
-                    required={newStep.abTest}
-                  />
+                  <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Subject — Variant B</label>
+                  <input className="input" value={newStep.subjectB} onChange={(e) => setNewStep({ ...newStep, subjectB: e.target.value })} placeholder="Different subject line for B group" required={newStep.abTest} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Email Body — Variant B</label>
-                  <textarea
-                    className="input min-h-[140px] resize-none"
-                    value={newStep.bodyB}
-                    onChange={(e) => setNewStep({ ...newStep, bodyB: e.target.value })}
-                    placeholder="Alternative email body for B group..."
-                  />
+                  <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Email Body — Variant B</label>
+                  <textarea className="input min-h-[140px] resize-y" value={newStep.bodyB} onChange={(e) => setNewStep({ ...newStep, bodyB: e.target.value })} placeholder="Alternative email body for B group…" />
                 </div>
               </>
             )}
             <div className="flex gap-3">
-              <button type="button" onClick={() => setAddingStep(false)} className="btn-secondary">
-                Cancel
-              </button>
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? "Saving..." : "Add Step"}
-              </button>
+              <button type="button" onClick={() => setAddingStep(false)} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : "Add Step"}</button>
             </div>
           </form>
         )}

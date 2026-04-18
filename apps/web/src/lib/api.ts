@@ -137,4 +137,37 @@ export const api = {
     delete: (wid: string, id: string) =>
       request(`/webhooks/${id}`, { method: "DELETE" }, wid),
   },
+
+  contacts: {
+    list: (wid: string, page = 1, limit = 50, search?: string) => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (search) params.set("search", search);
+      return request<any>(`/contacts?${params}`, {}, wid);
+    },
+    stats: (wid: string) => request<any>("/contacts/stats", {}, wid),
+    byCompany: (wid: string, companyId: string) =>
+      request<any[]>(`/contacts/by-company/${companyId}`, {}, wid),
+  },
+
+  companies: {
+    list: (wid: string, page = 1, limit = 50, search?: string) => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (search) params.set("search", search);
+      return request<any>(`/companies?${params}`, {}, wid);
+    },
+    get: (wid: string, id: string) => request<any>(`/companies/${id}`, {}, wid),
+  },
+
+  enrichment: {
+    trigger: (wid: string, domain: string) =>
+      request<any>("/enrichment/trigger", { method: "POST", body: JSON.stringify({ domain }) }, wid),
+    status: (wid: string) => request<any>("/enrichment/status", {}, wid),
+    providers: {
+      list: (wid: string) => request<any[]>("/enrichment/providers", {}, wid),
+      upsert: (wid: string, data: { name: string; displayName: string; credentials: Record<string, string> }) =>
+        request<any>("/enrichment/providers", { method: "POST", body: JSON.stringify(data) }, wid),
+      delete: (wid: string, name: string) =>
+        request<any>(`/enrichment/providers/${encodeURIComponent(name)}`, { method: "DELETE" }, wid),
+    },
+  },
 };

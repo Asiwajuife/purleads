@@ -71,6 +71,6 @@ export class EmailsService {
       where: { id: lead.id },
       data: { status: "UNSUBSCRIBED" },
     });
-    return { email: lead.email };
+    return { email: lead.email ?? "" };
   }
 }

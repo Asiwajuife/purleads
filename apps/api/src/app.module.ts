@@ -15,6 +15,9 @@ import { EmailsModule } from "./emails/emails.module";
 import { RepliesModule } from "./replies/replies.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 import { InvitesModule } from "./invites/invites.module";
+import { EnrichmentModule } from "./enrichment/enrichment.module";
+import { ContactsModule } from "./contacts/contacts.module";
+import { CompaniesModule } from "./companies/companies.module";
 
 @Module({
   imports: [
@@ -40,6 +43,9 @@ import { InvitesModule } from "./invites/invites.module";
     RepliesModule,
     WebhooksModule,
     InvitesModule,
+    EnrichmentModule,
+    ContactsModule,
+    CompaniesModule,
   ],
 })
 export class AppModule implements NestModule {

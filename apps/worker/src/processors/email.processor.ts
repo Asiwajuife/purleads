@@ -36,30 +36,58 @@ function isHardBounce(err: any): boolean {
   return HARD_BOUNCE_PATTERNS.some((p) => p.test(msg));
 }
 
+// ─── Decision maker lookup ──────────────────────────────────────────────────
+interface DMContact {
+  firstName?: string | null;
+  lastName?: string | null;
+  email: string;
+  jobTitle?: string | null;
+  linkedinUrl?: string | null;
+}
+
+async function getDecisionMakers(
+  workspaceId: string,
+  companyId: string | null | undefined,
+): Promise<{ dm1: DMContact | null; dm2: DMContact | null }> {
+  if (!companyId) return { dm1: null, dm2: null };
+  const contacts = await prisma.contact.findMany({
+    where: { workspaceId, companyId },
+    orderBy: { score: "desc" },
+    take: 2,
+    select: { firstName: true, lastName: true, email: true, jobTitle: true, linkedinUrl: true },
+  });
+  return { dm1: contacts[0] ?? null, dm2: contacts[1] ?? null };
+}
+
 // ─── AI personalization ─────────────────────────────────────────────────────
 async function generatePersonalizedEmail(
   subject: string,
   bodyTemplate: string,
-  lead: {
-    firstName?: string | null;
-    lastName?: string | null;
-    company?: string | null;
-    title?: string | null;
-    website?: string | null;
-  },
+  lead: { company?: string | null; website?: string | null },
+  dm1: DMContact | null,
+  dm2: DMContact | null,
 ): Promise<{ subject: string; body: string }> {
-  const name = [lead.firstName, lead.lastName].filter(Boolean).join(" ") || "there";
+  const dm1Name = [dm1?.firstName, dm1?.lastName].filter(Boolean).join(" ") || "there";
+  const dm2Name = [dm2?.firstName, dm2?.lastName].filter(Boolean).join(" ") || "";
   const company = lead.company || "your company";
-  const title = lead.title || "professional";
+  const title = dm1?.jobTitle || "professional";
   const website = lead.website ? `Website: ${lead.website}` : "";
+  const linkedin = dm1?.linkedinUrl ? `LinkedIn: ${dm1.linkedinUrl}` : "";
 
-  // Basic variable substitution as fallback
   function applyVars(text: string) {
     return text
-      .replace(/\{\{name\}\}/gi, name)
-      .replace(/\{\{firstName\}\}/gi, lead.firstName || name)
+      .replace(/\{\{name\}\}/gi, dm1Name)
+      .replace(/\{\{firstName\}\}/gi, dm1?.firstName || dm1Name)
       .replace(/\{\{company\}\}/gi, company)
-      .replace(/\{\{title\}\}/gi, title);
+      .replace(/\{\{company_name\}\}/gi, company)
+      .replace(/\{\{company_website\}\}/gi, lead.website || "")
+      .replace(/\{\{title\}\}/gi, title)
+      .replace(/\{\{decision_maker_1_name\}\}/gi, dm1Name)
+      .replace(/\{\{decision_maker_1_title\}\}/gi, dm1?.jobTitle || "")
+      .replace(/\{\{decision_maker_1_email\}\}/gi, dm1?.email || "")
+      .replace(/\{\{decision_maker_2_name\}\}/gi, dm2Name)
+      .replace(/\{\{decision_maker_2_title\}\}/gi, dm2?.jobTitle || "")
+      .replace(/\{\{decision_maker_2_email\}\}/gi, dm2?.email || "");
   }
 
   try {
@@ -68,10 +96,11 @@ async function generatePersonalizedEmail(
 2. Personalize the email template for them.
 
 Lead info:
-- Name: ${name}
+- Name: ${dm1Name}
 - Title: ${title}
 - Company: ${company}
 ${website}
+${linkedin}
 
 Email subject template: ${subject}
 Email body template: ${bodyTemplate}
@@ -91,10 +120,9 @@ Rules:
     });
 
     const result = JSON.parse(completion.choices[0].message.content || "{}");
-    const body = result.body || applyVars(bodyTemplate);
     return {
       subject: result.subject || applyVars(subject),
-      body,
+      body: result.body || applyVars(bodyTemplate),
     };
   } catch {
     return {
@@ -150,8 +178,23 @@ export async function processEmailJob(data: EmailJobData) {
   if (!lead) throw new Error(`Lead ${leadId} not found`);
   if (lead.status === "REPLIED" || lead.status === "UNSUBSCRIBED" || lead.status === "BOUNCED") {
     await prisma.campaignLead.update({ where: { id: campaignLeadId }, data: { completed: true } });
-    console.log(`⏭️  Skipping ${lead.email} — status: ${lead.status}`);
+    console.log(`⏭️  Skipping lead ${leadId} — status: ${lead.status}`);
     return;
+  }
+
+  // Manual leads (email set, no companyUrl) bypass enrichment checks entirely
+  const isManualLead = !!(lead as any).email && !(lead as any).companyUrl;
+
+  if (!isManualLead) {
+    // Wait for enrichment to complete before sending
+    if (lead.enrichmentStatus === "NONE" || lead.enrichmentStatus === "PENDING") {
+      throw new Error(`Lead ${leadId} not yet enriched — retrying`);
+    }
+    if (lead.enrichmentStatus === "FAILED" || !lead.companyId) {
+      await prisma.campaignLead.update({ where: { id: campaignLeadId }, data: { completed: true } });
+      console.log(`⏭️  Skipping lead ${leadId} — enrichment failed, no contacts found`);
+      return;
+    }
   }
 
   // Campaign still running?
@@ -178,8 +221,34 @@ export async function processEmailJob(data: EmailJobData) {
     return;
   }
 
-  // Generate personalized email with AI icebreaker
-  const { subject, body } = await generatePersonalizedEmail(useSubject, useBody, lead);
+  // For manual leads use the lead fields directly; otherwise look up enriched contacts
+  let dm1: DMContact | null = null;
+  let dm2: DMContact | null = null;
+  if (isManualLead) {
+    dm1 = {
+      firstName: (lead as any).firstName ?? null,
+      lastName: (lead as any).lastName ?? null,
+      email: (lead as any).email,
+      jobTitle: (lead as any).title ?? null,
+      linkedinUrl: null,
+    };
+    const ccRaw: string | undefined = ((lead as any).customData as any)?.cc;
+    if (ccRaw) {
+      const ccEmail = ccRaw.trim().split(/[,;]/)[0]?.trim();
+      if (ccEmail) dm2 = { email: ccEmail, firstName: null, lastName: null, jobTitle: null, linkedinUrl: null };
+    }
+  } else {
+    const result = await getDecisionMakers(workspaceId, (lead as any).companyId ?? null);
+    dm1 = result.dm1;
+    dm2 = result.dm2;
+    if (!dm1) {
+      await prisma.campaignLead.update({ where: { id: campaignLeadId }, data: { completed: true } });
+      console.log(`⏭️  Skipping lead ${leadId} — no contacts found after enrichment`);
+      return;
+    }
+  }
+
+  const { subject, body } = await generatePersonalizedEmail(useSubject, useBody, lead, dm1, dm2);
 
   // Create email log
   const emailLog = await prisma.emailLog.create({
@@ -189,7 +258,8 @@ export async function processEmailJob(data: EmailJobData) {
       leadId,
       sequenceId,
       inboxId: inbox.id,
-      to: lead.email,
+      to: dm1.email,
+      cc: dm2?.email ?? null,
       subject,
       body,
       abVariant,
@@ -211,14 +281,17 @@ export async function processEmailJob(data: EmailJobData) {
       auth: { user: inbox.smtpUser, pass: inbox.smtpPass },
     });
 
-    await transporter.sendMail({
+    const mailOptions: nodemailer.SendMailOptions = {
       from: `"${campaign.fromName || inbox.name}" <${inbox.email}>`,
-      to: lead.email,
+      to: dm1.email,
       replyTo: campaign.replyTo || inbox.email,
       subject,
       html: htmlBody,
       text: body + `\n\n---\nUnsubscribe: ${unsubscribeUrl}`,
-    });
+    };
+    if (dm2?.email) mailOptions.cc = dm2.email;
+
+    await transporter.sendMail(mailOptions);
 
     // Mark SENT
     await prisma.emailLog.update({
@@ -238,7 +311,8 @@ export async function processEmailJob(data: EmailJobData) {
       data: { currentStep: step, lastEmailAt: new Date() },
     });
 
-    console.log(`✅ Email sent to ${lead.email} (step ${step + 1}, inbox: ${inbox.email})`);
+    const ccInfo = dm2?.email ? ` cc: ${dm2.email}` : "";
+    console.log(`✅ Email sent to ${dm1.email}${ccInfo} (step ${step + 1}, inbox: ${inbox.email})`);
 
     // Queue next step if available
     const nextSequence = await prisma.sequence.findFirst({
@@ -268,9 +342,9 @@ export async function processEmailJob(data: EmailJobData) {
       // Permanent failure — stop sending to this lead entirely
       await prisma.lead.update({ where: { id: leadId }, data: { status: "BOUNCED" } });
       await prisma.campaignLead.update({ where: { id: campaignLeadId }, data: { completed: true } });
-      console.log(`🚫 Hard bounce for ${lead.email} — marked BOUNCED`);
+      console.log(`🚫 Hard bounce for ${dm1.email} — marked BOUNCED`);
     } else {
-      console.error(`❌ Soft failure sending to ${lead.email}:`, err.message);
+      console.error(`❌ Soft failure sending to ${dm1.email}:`, err.message);
       throw err; // BullMQ will retry
     }
   }

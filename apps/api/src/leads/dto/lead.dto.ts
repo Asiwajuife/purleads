@@ -1,8 +1,13 @@
-import { IsEmail, IsString, IsOptional } from "class-validator";
+import { IsEmail, IsString, IsOptional, IsObject } from "class-validator";
 
 export class CreateLeadDto {
+  @IsString()
+  @IsOptional()
+  companyUrl?: string;
+
   @IsEmail()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @IsString()
   @IsOptional()
@@ -27,4 +32,8 @@ export class CreateLeadDto {
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @IsObject()
+  @IsOptional()
+  customData?: Record<string, any>;
 }

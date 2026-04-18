@@ -4,6 +4,7 @@ import IORedis from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { processEmailJob, EmailJobData } from "./processors/email.processor";
 import { processScheduledLaunch } from "./processors/scheduled-launch.processor";
+import { processEnrichJob, EnrichJobData } from "./processors/enrichment.processor";
 
 const connection = new IORedis({
   host: process.env.REDIS_HOST || "localhost",
@@ -24,6 +25,9 @@ const worker = new Worker(
     if (job.name === "scheduled-launch") {
       console.log(`🗓️  Processing scheduled launch for campaign ${job.data.campaignId}`);
       await processScheduledLaunch(job.data, emailQueue);
+    } else if (job.name === "enrich-company") {
+      console.log(`🔍 Enriching domain ${job.data.domain} (workspace: ${job.data.workspaceId})`);
+      await processEnrichJob(job.data as EnrichJobData);
     } else {
       console.log(`📨 Processing job ${job.id} — lead ${job.data.leadId}`);
       await processEmailJob(job.data as EmailJobData);
