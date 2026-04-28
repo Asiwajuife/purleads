@@ -38,8 +38,9 @@ export class LeadsController {
     @WorkspaceId() workspaceId: string,
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query("limit", new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Query("search") search?: string,
   ) {
-    return this.leadsService.findAll(workspaceId, user.id, page, limit);
+    return this.leadsService.findAll(workspaceId, user.id, page, limit, search);
   }
 
   @Delete(":id")

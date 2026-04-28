@@ -35,6 +35,19 @@ export class InboxesService {
     });
   }
 
+  async update(workspaceId: string, userId: string, inboxId: string, dto: Partial<{
+    warmupEnabled: boolean;
+    warmupStartLimit: number;
+    warmupIncrement: number;
+    warmupMaxLimit: number;
+    dailyLimit: number;
+  }>) {
+    await this.workspaces.assertMember(workspaceId, userId);
+    const inbox = await this.prisma.inbox.findFirst({ where: { id: inboxId, workspaceId } });
+    if (!inbox) throw new NotFoundException("Inbox not found");
+    return this.prisma.inbox.update({ where: { id: inboxId }, data: dto });
+  }
+
   async delete(workspaceId: string, userId: string, inboxId: string) {
     await this.workspaces.assertMember(workspaceId, userId);
     const inbox = await this.prisma.inbox.findFirst({ where: { id: inboxId, workspaceId } });

@@ -118,8 +118,9 @@ model Inbox {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  domain      Domain?   @relation(fields: [domainId], references: [id])
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain      Domain?    @relation(fields: [domainId], references: [id])
+  campaigns   Campaign[]
   emailLogs   EmailLog[]
 
   @@map("inboxes")
@@ -177,12 +178,14 @@ model Campaign {
   status      CampaignStatus @default(DRAFT)
   fromName    String?
   replyTo     String?
+  inboxId     String?
   startedAt   DateTime?
   scheduledAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inbox       Inbox?         @relation(fields: [inboxId], references: [id])
   sequences   Sequence[]
   leads       CampaignLead[]
   emailLogs   EmailLog[]

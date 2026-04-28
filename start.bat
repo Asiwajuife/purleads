@@ -21,11 +21,29 @@ if exist "%ROOT%\apps\web\.next" (
     echo   .next cleared.
 )
 
+echo Generating Prisma client...
+cmd /c "cd /d %ROOT%\apps\api && npx prisma generate --schema=%ROOT%\prisma\schema.prisma"
+if errorlevel 1 (
+    echo.
+    echo ERROR: Prisma generate failed. See errors above.
+    pause
+    exit /b 1
+)
+
 echo Building API...
 cmd /c "cd /d %ROOT%\apps\api && %ROOT%\node_modules\.bin\nest.cmd build"
 if errorlevel 1 (
     echo.
     echo ERROR: API build failed. See errors above.
+    pause
+    exit /b 1
+)
+
+echo Building Worker...
+cmd /c "cd /d %ROOT%\apps\worker && %ROOT%\node_modules\.bin\tsc.cmd"
+if errorlevel 1 (
+    echo.
+    echo ERROR: Worker build failed. See errors above.
     pause
     exit /b 1
 )
@@ -39,7 +57,7 @@ start "Purleads API" /d "%ROOT%\apps\api" cmd /k "node dist\main.js"
 timeout /t 3 /nobreak >nul
 
 REM Worker
-start "Purleads Worker" /d "%ROOT%" cmd /k "node_modules\.bin\ts-node.cmd --transpile-only apps\worker\src\worker.ts"
+start "Purleads Worker" /d "%ROOT%\apps\worker" cmd /k "node dist\worker.js"
 
 REM Web — next.cmd is hoisted to root node_modules by npm workspaces
 start "Purleads Web" /d "%ROOT%\apps\web" cmd /k "%ROOT%\node_modules\.bin\next.cmd dev -p 3000"

@@ -31,7 +31,11 @@ export class CampaignsService {
     await this.workspaces.assertMember(workspaceId, userId);
     const campaign = await this.prisma.campaign.findFirst({
       where: { id: campaignId, workspaceId },
-      include: { sequences: { orderBy: { step: "asc" } }, leads: { include: { lead: true } } },
+      include: {
+        sequences: { orderBy: { step: "asc" } },
+        leads: { include: { lead: true } },
+        inbox: { select: { id: true, name: true, email: true } },
+      },
     });
     if (!campaign) throw new NotFoundException("Campaign not found");
     return campaign;

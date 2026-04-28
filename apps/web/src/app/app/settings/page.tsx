@@ -122,6 +122,9 @@ export default function SettingsPage() {
   const [domains, setDomains] = useState<any[]>([]);
   const [showInboxForm, setShowInboxForm] = useState(false);
   const [inboxForm, setInboxForm] = useState({ name: "", email: "", smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", dailyLimit: 50, warmupEnabled: false, warmupStartLimit: 5, warmupIncrement: 5, warmupMaxLimit: 50 });
+  const [editingWarmup, setEditingWarmup] = useState<string | null>(null);
+  const [warmupEdit, setWarmupEdit] = useState({ warmupEnabled: false, warmupStartLimit: 5, warmupIncrement: 5, warmupMaxLimit: 50, dailyLimit: 50 });
+  const [savingWarmup, setSavingWarmup] = useState(false);
   const [domainName, setDomainName] = useState("");
   const [saving, setSaving] = useState(false);
   const [calendlyUrl, setCalendlyUrl] = useState(() => typeof window !== "undefined" ? localStorage.getItem("purleads_calendly") || "" : "");
@@ -155,6 +158,26 @@ export default function SettingsPage() {
   }
 
   useEffect(() => { load(); }, [wid]);
+
+  function openWarmupEdit(inbox: any) {
+    setWarmupEdit({
+      warmupEnabled: inbox.warmupEnabled,
+      warmupStartLimit: inbox.warmupStartLimit,
+      warmupIncrement: inbox.warmupIncrement,
+      warmupMaxLimit: inbox.warmupMaxLimit,
+      dailyLimit: inbox.dailyLimit,
+    });
+    setEditingWarmup(inbox.id);
+  }
+
+  async function saveWarmup(inboxId: string) {
+    setSavingWarmup(true);
+    try {
+      await api.inboxes.update(wid, inboxId, warmupEdit);
+      setEditingWarmup(null);
+      load();
+    } finally { setSavingWarmup(false); }
+  }
 
   async function addInbox(e: React.FormEvent) {
     e.preventDefault(); setSaving(true);
@@ -490,23 +513,76 @@ export default function SettingsPage() {
             </thead>
             <tbody className="divide-y divide-white/[0.05]">
               {inboxes.map((inbox) => (
-                <tr key={inbox.id} className="hover:bg-white/[0.04] transition-colors">
-                  <td className="px-6 py-3.5 font-medium text-white/80">{inbox.name}</td>
-                  <td className="px-6 py-3.5 text-white/50">{inbox.email}</td>
-                  <td className="px-6 py-3.5 text-white/35 text-xs font-mono">{inbox.smtpHost}:{inbox.smtpPort}</td>
-                  <td className="px-6 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-20 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-brand-500 to-brand-400 rounded-full" style={{ width: `${Math.min((inbox.sentToday / inbox.dailyLimit) * 100, 100)}%` }} />
+                <>
+                  <tr key={inbox.id} className="hover:bg-white/[0.04] transition-colors">
+                    <td className="px-6 py-3.5 font-medium text-white/80">{inbox.name}</td>
+                    <td className="px-6 py-3.5 text-white/50">{inbox.email}</td>
+                    <td className="px-6 py-3.5 text-white/35 text-xs font-mono">{inbox.smtpHost}:{inbox.smtpPort}</td>
+                    <td className="px-6 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-20 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-brand-500 to-brand-400 rounded-full" style={{ width: `${Math.min((inbox.sentToday / inbox.dailyLimit) * 100, 100)}%` }} />
+                        </div>
+                        <span className="text-xs text-white/40 tabular-nums">{inbox.sentToday}/{inbox.dailyLimit}</span>
+                        {inbox.warmupEnabled && (
+                          <span className="text-xs bg-orange-400/15 text-orange-300 px-1.5 py-0.5 rounded font-medium">
+                            🔥 warmup day {inbox.warmupDay}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-xs text-white/40 tabular-nums">{inbox.sentToday}/{inbox.dailyLimit}</span>
-                      {inbox.warmupEnabled && <span className="text-xs bg-orange-400/15 text-orange-300 px-1.5 py-0.5 rounded font-medium">warmup day {inbox.warmupDay}</span>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-3.5 text-right">
-                    <button onClick={async () => { if (!confirm("Delete this inbox?")) return; await api.inboxes.delete(wid, inbox.id); load(); }} className="text-white/20 hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-6 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => editingWarmup === inbox.id ? setEditingWarmup(null) : openWarmupEdit(inbox)}
+                          className="text-xs text-white/30 hover:text-orange-300 transition-colors font-medium"
+                        >
+                          {editingWarmup === inbox.id ? "Cancel" : "Warmup"}
+                        </button>
+                        <button onClick={async () => { if (!confirm("Delete this inbox?")) return; await api.inboxes.delete(wid, inbox.id); load(); }} className="text-white/20 hover:text-red-400 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {editingWarmup === inbox.id && (
+                    <tr key={`${inbox.id}-warmup`}>
+                      <td colSpan={5} className="px-6 py-4 bg-orange-400/[0.04] border-b border-orange-400/10">
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold text-orange-300/80 uppercase tracking-wider">Warmup Settings</p>
+                          <label className="flex items-center gap-2.5 cursor-pointer text-sm text-white/60 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={warmupEdit.warmupEnabled}
+                              onChange={(e) => setWarmupEdit({ ...warmupEdit, warmupEnabled: e.target.checked })}
+                              className="rounded border-white/20"
+                            />
+                            Enable warmup <span className="text-xs font-normal text-white/30">(gradually ramps daily limit each day)</span>
+                          </label>
+                          {warmupEdit.warmupEnabled ? (
+                            <div className="grid grid-cols-3 gap-3">
+                              <div><FieldLabel>Start (emails/day)</FieldLabel><input type="number" className="input" min={1} value={warmupEdit.warmupStartLimit} onChange={(e) => setWarmupEdit({ ...warmupEdit, warmupStartLimit: parseInt(e.target.value) || 1 })} /></div>
+                              <div><FieldLabel>+Per day</FieldLabel><input type="number" className="input" min={1} value={warmupEdit.warmupIncrement} onChange={(e) => setWarmupEdit({ ...warmupEdit, warmupIncrement: parseInt(e.target.value) || 1 })} /></div>
+                              <div><FieldLabel>Max (emails/day)</FieldLabel><input type="number" className="input" min={1} value={warmupEdit.warmupMaxLimit} onChange={(e) => setWarmupEdit({ ...warmupEdit, warmupMaxLimit: parseInt(e.target.value) || 1 })} /></div>
+                            </div>
+                          ) : (
+                            <div className="w-40">
+                              <FieldLabel>Daily limit</FieldLabel>
+                              <input type="number" className="input" min={1} max={1000} value={warmupEdit.dailyLimit} onChange={(e) => setWarmupEdit({ ...warmupEdit, dailyLimit: parseInt(e.target.value) || 1 })} />
+                            </div>
+                          )}
+                          <button
+                            onClick={() => saveWarmup(inbox.id)}
+                            disabled={savingWarmup}
+                            className="btn-primary text-xs px-4 py-1.5"
+                          >
+                            {savingWarmup ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>

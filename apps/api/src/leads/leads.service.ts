@@ -98,17 +98,21 @@ export class LeadsService {
     return { total: leads.length, imported, skipped, domainsQueued, leadIds };
   }
 
-  async findAll(workspaceId: string, userId: string, page = 1, limit = 50) {
+  async findAll(workspaceId: string, userId: string, page = 1, limit = 50, search?: string) {
     await this.workspaces.assertMember(workspaceId, userId);
     const skip = (page - 1) * limit;
+    const where: any = { workspaceId };
+    if (search) {
+      where.OR = [
+        { email: { contains: search, mode: "insensitive" } },
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { company: { contains: search, mode: "insensitive" } },
+      ];
+    }
     const [leads, total] = await Promise.all([
-      this.prisma.lead.findMany({
-        where: { workspaceId },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      this.prisma.lead.count({ where: { workspaceId } }),
+      this.prisma.lead.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: limit }),
+      this.prisma.lead.count({ where }),
     ]);
     return { leads, total, page, limit };
   }

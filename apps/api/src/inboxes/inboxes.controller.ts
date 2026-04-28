@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from "@nestjs/common";
 import { InboxesService } from "./inboxes.service";
 import { CreateInboxDto } from "./dto/inbox.dto";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -17,6 +17,11 @@ export class InboxesController {
   @Get()
   findAll(@CurrentUser() user: any, @WorkspaceId() wid: string) {
     return this.inboxesService.findAll(wid, user.id);
+  }
+
+  @Patch(":id")
+  update(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any, @WorkspaceId() wid: string) {
+    return this.inboxesService.update(wid, user.id, id, body);
   }
 
   @Delete(":id")

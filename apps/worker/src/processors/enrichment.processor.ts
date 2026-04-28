@@ -92,7 +92,7 @@ async function apolloFindContacts(domain: string, apiKey: string): Promise<Enric
 
     if (!res.ok) return null;
 
-    const data = await res.json();
+    const data: any = await res.json();
     const people: any[] = data.people || [];
     const org = data.organizations?.[0] || people[0]?.organization || {};
 
@@ -137,7 +137,7 @@ async function getSnovToken(clientId: string, clientSecret: string): Promise<str
         client_secret: clientSecret,
       }),
     });
-    const data = await res.json();
+    const data: any = await res.json();
     snovToken = data.access_token || null;
     snovTokenExpiry = Date.now() + ((data.expires_in ?? 3600) - 60) * 1000;
     return snovToken;
@@ -156,7 +156,7 @@ async function snovFindContacts(domain: string, clientId: string, clientSecret: 
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) return null;
-    const data = await res.json();
+    const data: any = await res.json();
     const emails: any[] = data.emails || [];
 
     const contacts: EnrichedContact[] = emails
@@ -188,7 +188,7 @@ async function hunterFindContacts(domain: string, apiKey: string): Promise<Enric
       `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${encodeURIComponent(apiKey)}&limit=10`,
     );
     if (!res.ok) return null;
-    const data = await res.json();
+    const data: any = await res.json();
     const emails: any[] = data.data?.emails || [];
     const org = data.data || {};
 

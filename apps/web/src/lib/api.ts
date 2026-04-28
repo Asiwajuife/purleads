@@ -61,6 +61,8 @@ export const api = {
   leads: {
     list: (wid: string, page = 1, limit = 50) =>
       request<any>(`/leads?page=${page}&limit=${limit}`, {}, wid),
+    search: (wid: string, query: string, limit = 10) =>
+      request<any>(`/leads?search=${encodeURIComponent(query)}&limit=${limit}`, {}, wid),
     create: (wid: string, data: any) =>
       request("/leads", { method: "POST", body: JSON.stringify(data) }, wid),
     uploadCsv: (wid: string, file: File) => {
@@ -111,6 +113,8 @@ export const api = {
     list: (wid: string) => request<any[]>("/inboxes", {}, wid),
     create: (wid: string, data: any) =>
       request("/inboxes", { method: "POST", body: JSON.stringify(data) }, wid),
+    update: (wid: string, id: string, data: any) =>
+      request(`/inboxes/${id}`, { method: "PATCH", body: JSON.stringify(data) }, wid),
     delete: (wid: string, id: string) =>
       request(`/inboxes/${id}`, { method: "DELETE" }, wid),
   },
@@ -124,6 +128,10 @@ export const api = {
   emails: {
     logs: (wid: string, page = 1) => request<any>(`/emails/logs?page=${page}`, {}, wid),
     stats: (wid: string) => request<any>("/emails/stats", {}, wid),
+    sendManual: (wid: string, data: { leadId: string; campaignId: string; sequenceId: string; inboxId: string }) =>
+      request<{ success: boolean; messageId: string }>("/emails/send-manual", { method: "POST", body: JSON.stringify(data) }, wid),
+    sendCompose: (wid: string, data: { campaignId: string; sequenceId: string; email: string; cc?: string; firstName?: string; lastName?: string; company?: string }) =>
+      request<{ success: boolean; messageId: string }>("/emails/send-compose", { method: "POST", body: JSON.stringify(data) }, wid),
   },
 
   replies: {

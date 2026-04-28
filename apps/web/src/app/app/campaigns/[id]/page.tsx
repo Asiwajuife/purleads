@@ -5,6 +5,26 @@ import { Plus, Trash2, ArrowLeft, Play, Pause, Eye, X, Copy, Clock, Upload, User
 import { api } from "@/lib/api";
 import { getWorkspaceId } from "@/lib/auth";
 import RichField from "@/components/RichField";
+import EmailBodyEditor from "@/components/EmailBodyEditor";
+import ManualSequenceTrigger from "./components/ManualSequenceTrigger";
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function buildPreviewHtml(body: string, unsubscribeUrl = "#"): string {
+  const isHtml = body.trim().startsWith("<");
+  const htmlBody = isHtml
+    ? body
+    : body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:600px;margin:0 auto;padding:20px">
+  <div style="margin-bottom:32px">${htmlBody}</div>
+  <div style="border-top:1px solid #e5e7eb;margin-top:32px;padding-top:16px;font-size:12px;color:#9ca3af">
+    <p style="margin:0">If you'd prefer not to receive emails like this, you can <a href="${unsubscribeUrl}" style="color:#6b7280">unsubscribe here</a>.</p>
+  </div>
+</body></html>`;
+}
 
 function PreviewModal({ seq, onClose }: { seq: any; onClose: () => void }) {
   const sampleLead = { name: "John Smith", firstName: "John", company: "Acme Corp", title: "CEO" };
@@ -31,9 +51,15 @@ function PreviewModal({ seq, onClose }: { seq: any; onClose: () => void }) {
             <p className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-1.5">Subject</p>
             <p className="text-white/80 font-medium">{applyVars(seq.subject)}</p>
           </div>
-          <div className="bg-white/[0.05] rounded-xl p-4 border border-white/[0.08]">
-            <p className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-2">Body</p>
-            <p className="text-sm text-white/60 whitespace-pre-wrap leading-relaxed">{applyVars(seq.body)}</p>
+          <div className="rounded-xl overflow-hidden border border-white/[0.08]">
+            <p className="text-xs font-semibold text-white/30 uppercase tracking-wider px-4 pt-3 pb-2 bg-white/[0.05]">Body</p>
+            <iframe
+              srcDoc={buildPreviewHtml(applyVars(seq.body))}
+              className="w-full border-0"
+              style={{ height: 420 }}
+              sandbox="allow-same-origin"
+              title="Email body preview"
+            />
           </div>
           <div className="rounded-xl bg-blue-500/[0.1] border border-blue-400/20 p-4 text-xs text-blue-300">
             <p className="font-semibold mb-1">What AI will add per lead:</p>
@@ -425,13 +451,28 @@ export default function CampaignDetailPage() {
       {/* Add Leads */}
       <AddLeadsPanel campaignId={id} wid={wid} onAdded={load} />
 
+      {/* Manual Fire */}
+      <div className="mb-8">
+        <ManualSequenceTrigger
+          sequences={sequences}
+          campaignId={id}
+          wid={wid}
+          campaignFromName={campaign?.fromName}
+        />
+      </div>
+
       {/* Sequence Builder */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Email Sequence</h2>
-          <button onClick={() => setAddingStep(!addingStep)} className="btn-secondary flex items-center gap-2 text-sm">
-            <Plus size={15} /> Add Step
-          </button>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Email Sequence</h2>
+            <p className="text-xs text-white/30 mt-0.5">{sequences.length} / 4 steps — 1 initial + up to 3 follow-ups</p>
+          </div>
+          {sequences.length < 4 && (
+            <button onClick={() => setAddingStep(!addingStep)} className="btn-secondary flex items-center gap-2 text-sm">
+              <Plus size={15} /> Add Step
+            </button>
+          )}
         </div>
 
         {sequences.length === 0 && !addingStep && (
@@ -473,8 +514,8 @@ export default function CampaignDetailPage() {
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-white/45 whitespace-pre-wrap bg-white/[0.04] rounded-xl px-4 py-3 border border-white/[0.07] leading-relaxed">
-                {seq.body}
+              <p className="text-sm text-white/45 line-clamp-3 bg-white/[0.04] rounded-xl px-4 py-3 border border-white/[0.07] leading-relaxed">
+                {stripHtml(seq.body)}
               </p>
             </div>
           ))}
@@ -497,12 +538,10 @@ export default function CampaignDetailPage() {
               <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">
                 Email Body * — use &#123;&#123;name&#125;&#125;, &#123;&#123;company&#125;&#125;, &#123;&#123;icebreaker&#125;&#125;
               </label>
-              <textarea
-                className="input min-h-[140px] resize-y"
+              <EmailBodyEditor
                 value={newStep.body}
-                onChange={(e) => setNewStep({ ...newStep, body: e.target.value })}
-                placeholder={"Hi {{name}},\n\n{{icebreaker}}\n\nI noticed {{company}} is doing great work in...\n\nBest,\n[Your name]"}
-                required
+                onChange={(html) => setNewStep({ ...newStep, body: html })}
+                placeholder="Hi {{name}},&#10;&#10;{{icebreaker}}&#10;&#10;I noticed {{company}} is doing great work in..."
               />
             </div>
             <div>
@@ -532,7 +571,11 @@ export default function CampaignDetailPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Email Body — Variant B</label>
-                  <textarea className="input min-h-[140px] resize-y" value={newStep.bodyB} onChange={(e) => setNewStep({ ...newStep, bodyB: e.target.value })} placeholder="Alternative email body for B group…" />
+                  <EmailBodyEditor
+                    value={newStep.bodyB}
+                    onChange={(html) => setNewStep({ ...newStep, bodyB: html })}
+                    placeholder="Alternative email body for B group…"
+                  />
                 </div>
               </>
             )}

@@ -133,12 +133,15 @@ Rules:
 }
 
 // ─── Build HTML email ───────────────────────────────────────────────────────
-function buildHtmlEmail(plainBody: string, unsubscribeUrl: string, trackingPixelUrl: string): string {
-  const htmlBody = plainBody
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
+function buildHtmlEmail(body: string, unsubscribeUrl: string, trackingPixelUrl: string): string {
+  const isHtml = body.trim().startsWith("<") || /<[a-z][\s\S]*>/i.test(body);
+  const htmlBody = isHtml
+    ? body
+    : body
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
 
   return `<!DOCTYPE html>
 <html>

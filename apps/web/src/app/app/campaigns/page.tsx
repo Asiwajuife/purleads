@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Plus, Play, Pause, ChevronRight, Megaphone, Trash2 } from "lucide-react";
+import { Plus, Play, Pause, ChevronRight, Megaphone, Trash2, Send } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { getWorkspaceId } from "@/lib/auth";
@@ -108,10 +108,19 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">Campaigns</h1>
           <p className="text-white/40 text-sm mt-1">Build and launch outbound sequences</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={16} />
-          New Campaign
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app/campaigns/send"
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Send size={15} />
+            Send Email
+          </Link>
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} />
+            New Campaign
+          </button>
+        </div>
       </div>
 
       <div className="card overflow-hidden">

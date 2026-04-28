@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Param,
   Query,
   Res,
@@ -18,6 +20,26 @@ export class EmailsController {
   constructor(private emailsService: EmailsService) {}
 
   // ─── Protected routes ──────────────────────────────────────────────────────
+
+  @Post("send-manual")
+  @UseGuards(JwtAuthGuard)
+  sendManual(
+    @CurrentUser() user: any,
+    @WorkspaceId() wid: string,
+    @Body() body: { leadId: string; campaignId: string; sequenceId: string; inboxId: string },
+  ) {
+    return this.emailsService.sendManual(wid, user.id, body);
+  }
+
+  @Post("send-compose")
+  @UseGuards(JwtAuthGuard)
+  sendCompose(
+    @CurrentUser() user: any,
+    @WorkspaceId() wid: string,
+    @Body() body: { campaignId: string; sequenceId: string; email: string; cc?: string; firstName?: string; lastName?: string; company?: string },
+  ) {
+    return this.emailsService.sendCompose(wid, user.id, body);
+  }
 
   @Get("logs")
   @UseGuards(JwtAuthGuard)
